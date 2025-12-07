@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>WaterGuard — умный калькулятор орошения</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#58c0a7;--muted:#9aa6b2;--glass:rgba(255,255,255,0.03)}
+    *{box-sizing:border-box;font-family:Inter, Roboto, system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial}
+    body{margin:0;min-height:100vh;background:linear-gradient(180deg,#071028 0%, #071a2a 100%);color:#e6eef6;padding:28px}
+    .wrap{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:1fr 420px;gap:20px}
+    header{grid-column:1/-1;display:flex;align-items:center;gap:16px}
+    h1{margin:0;font-size:20px}
+    .subtitle{color:var(--muted);font-size:13px}
+
+    .card{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 6px 30px rgba(2,6,23,0.6);}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:8px}
+    input[type="number"], select{width:100%;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-size:14px}
+    .row{display:flex;gap:12px}
+    .col{flex:1}
+    .muted{color:var(--muted);font-size:13px}
+    button{background:var(--accent);border:none;padding:10px 14px;border-radius:10px;color:#062022;font-weight:600;cursor:pointer}
+    button:hover{opacity:0.9}
+    .result{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:14px;border-radius:10px;margin-top:12px}
+    .big{font-size:20px;font-weight:700}
+    .tiny{font-size:12px;color:var(--muted)}
+    .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:var(--glass);color:var(--muted);font-size:12px;cursor:pointer}
+    .pill:hover{background:rgba(255,255,255,0.08)}
+    .warn{color:#ffb35c}
+    .danger{color:#ff7a7a}
+    footer{grid-column:1/-1;margin-top:8px;color:var(--muted);font-size:13px}
+    .legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    .legend .item{display:flex;gap:8px;align-items:center}
+    .swatch{width:12px;height:12px;border-radius:3px}
+
+    /* simple visual widgets */
+    .viz{display:flex;gap:12px;align-items:center}
+    .water-bar{width:14px;height:120px;background:#072;border-radius:6px;position:relative;overflow:hidden}
+    .water-fill{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,#58c0a7,#2ea588)}
+    .meter{width:120px;height:120px;display:flex;align-items:center;justify-content:center}
+    .thermo{width:28px;height:120px;background:linear-gradient(to top,#3b8, #071);border-radius:8px;position:relative;overflow:hidden}
+    .thermo-fill{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,#ff7a7a,#ffb35c)}
+    .history-table{width:100%;border-collapse:collapse;margin-top:10px}
+    .history-table th,.history-table td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.03);font-size:13px;color:var(--muted)}
+    .about{font-size:13px;color:var(--muted);line-height:1.4}
+    
+    /* New styles */
+    .chart-container{background:var(--glass);border-radius:8px;padding:12px;margin-top:12px}
+    .chart-container canvas{max-height:200px}
+    .stats-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px}
+    .stat-box{background:var(--glass);border-radius:8px;padding:10px;text-align:center}
+    .stat-value{font-size:18px;font-weight:700;color:var(--accent);margin-top:4px}
+    .favorites{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+    .fav-btn{background:rgba(88,192,167,0.2);border:1px solid var(--accent);padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;color:var(--accent)}
+    .fav-btn:hover{background:rgba(88,192,167,0.3)}
+    .fav-btn.active{background:var(--accent);color:#062022}
+
+    /* responsive */
+    @media (max-width:940px){.wrap{grid-template-columns:1fr;padding:0 8px} .card{padding:14px} .viz{flex-direction:column;gap:8px} .stats-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="card" style="display:flex;align-items:center;gap:12px;padding:10px 14px">
+        <div style="width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#3bb0d6);display:flex;align-items:center;justify-content:center;color:#042e29;font-weight:800">WG</div>
+        <div>
+          <h1>WaterGuard — умный калькулятор орошения</h1>
+          <div class="subtitle">Быстрый расчет — вводишь поле, культуру, влажность и температуру → получаешь объём воды и рекомендацию.</div>
+        </div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <button id="showStats" class="pill">Статистика</button>
+        <button id="showAbout" class="pill">О проекте</button>
+        <button id="exportCSV" class="pill">Экспорт</button>
+      </div>
+    </header>
+
+    <!-- left: form + explanation -->
+    <div class="card">
+      <form id="wg-form">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+          <label style="flex:1">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span>Название поля</span><span class="tiny muted">для быстрого доступа</span></div>
+            <input id="fieldName" type="text" placeholder="напр. Поле 1" />
+          </label>
+          <button type="button" id="addFav" class="pill" style="margin-top:18px">★ Сохранить</button>
+        </div>
+
+        <div id="favoritesBox" style="display:none;margin-bottom:12px">
+          <div class="tiny muted">Избранные поля:</div>
+          <div class="favorites" id="favoritesList"></div>
+        </div>
+
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+          <label style="flex:1">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span>Площадь поля</span><span class="tiny muted">в га или м²</span></div>
+            <div class="row">
+              <input id="area" type="number" min="0" step="0.01" placeholder="напр. 1.5" required />
+              <select id="area-unit" style="width:120px">
+                <option value="ha">га</option>
+                <option value="m2">м²</option>
+              </select>
+            </div>
+          </label>
+        </div>
+
+        <div style="display:flex;gap:12px;margin-bottom:12px">
+          <label class="col">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span>Тип культуры</span><span class="tiny muted">предустановки</span></div>
+            <select id="crop" required>
+              <option value="wheat">Пшеница</option>
+              <option value="corn">Кукуруза</option>
+              <option value="potato">Картофель</option>
+              <option value="vegetables">Овощные</option>
+              <option value="cotton">Хлопок</option>
+              <option value="custom">Другое (настройки вручную)</option>
+            </select>
+          </label>
+
+          <label class="col">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span>Текущая влажность почвы</span><span class="tiny muted">% (0–100)</span></div>
+            <input id="soil" type="number" min="0" max="100" step="1" value="60" />
+          </label>
+        </div>
+
+        <div style="display:flex;gap:12px;margin-bottom:12px">
+          <label class="col">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span>Температура воздуха</span><span class="tiny muted">°C</span></div>
+            <input id="temp" type="number" step="0.1" value="25" />
+          </label>
+
+          <label class="col">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span>Эффективность орошения</span><span class="tiny muted">0.5–1.0</span></div>
+            <input id="eff" type="number" min="0.5" max="1" step="0.01" value="0.75" />
+          </label>
+        </div>
+
+        <div id="custom-settings" style="display:none;margin-bottom:12px;border-radius:8px;padding:10px;background:var(--glass);">
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <label style="flex:1"><div class="tiny muted">Kc (коэффициент культуры)</div><input id="kc" type="number" step="0.01" value="0.9" /></label>
+            <label style="flex:1"><div class="tiny muted">Глубина корневой зоны (мм)</div><input id="rootDepth" type="number" step="1" value="300" /></label>
+          </div>
+          <div style="display:flex;gap:8px">
+            <label style="flex:1"><div class="tiny muted">Оптимальная влажность (%)</div><input id="smOpt" type="number" step="1" value="70" /></label>
+            <label style="flex:1"><div class="tiny muted">Точка увядания (%)</div><input id="smWilt" type="number" step="1" value="25" /></label>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+          <button type="button" id="calc">Посчитать</button>
+          <button type="button" id="save" class="pill">Сохранить измерение</button>
+          <div class="pill">Быстрая формула: ET₀ ≈ 0.3 × T (мм/день)</div>
+        </div>
+
+        <div class="result" id="result" style="display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div class="muted">Результаты расчёта</div>
+              <div id="summary" class="big" style="margin-top:6px"></div>
+              <div id="subsummary" class="tiny muted" style="margin-top:6px"></div>
+            </div>
+            <div style="text-align:right">
+              <div class="tiny muted">Рекомендуемая подача</div>
+              <div id="appliedLiters" class="big" style="margin-top:6px"></div>
+            </div>
+          </div>
+
+          <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div>
+              <div class="tiny muted">Детали</div>
+              <ul id="details" style="margin:8px 0 0 16px;color:var(--muted)"></ul>
+            </div>
+            <div>
+              <div class="tiny muted">Статус</div>
+              <div id="status" style="margin-top:8px"></div>
+              <div id="todRec" style="margin-top:8px" class="tiny muted"></div>
+              <div class="legend" id="legend" style="margin-top:8px">
+                <div class="item"><div class="swatch" style="background:#58c0a7"></div><div class="tiny muted">нормально</div></div>
+                <div class="item"><div class="swatch" style="background:#ffb35c"></div><div class="tiny muted">следить</div></div>
+                <div class="item"><div class="swatch" style="background:#ff7a7a"></div><div class="tiny muted">срочно поливать / избыток</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- visualizations -->
+          <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+            <div class="viz">
+              <div style="text-align:center;margin-right:6px"><div class="tiny muted">Влажность</div><div class="meter" id="humidityMeter"></div></div>
+              <div style="text-align:center;margin-right:6px"><div class="tiny muted">Уровень воды</div><div class="water-bar"><div id="waterFill" class="water-fill" style="height:60%"></div></div></div>
+              <div style="text-align:center"><div class="tiny muted">Температура</div><div class="thermo"><div id="thermoFill" class="thermo-fill" style="height:40%"></div></div></div>
+            </div>
+            <div style="width:260px;text-align:left">
+              <div class="tiny muted">Быстрые нормы по культуре</div>
+              <div id="cropCard" style="margin-top:8px;color:var(--muted);font-size:13px"></div>
+            </div>
+          </div>
+
+          <!-- Chart Trend -->
+          <div class="chart-container">
+            <div class="tiny muted">График влажности (последние измерения)</div>
+            <canvas id="trendChart"></canvas>
+          </div>
+
+          <!-- history -->
+          <div style="margin-top:12px">
+            <div class="tiny muted">История измерений (локально)</div>
+            <table class="history-table" id="historyTable">
+              <thead><tr><th>Дата</th><th>Культура</th><th>Вл.</th><th>Т°C</th><th>Объём</th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <div style="margin-top:8px"><button id="clearHistory" class="pill">Очистить историю</button></div>
+          </div>
+
+        </div>
+
+      </form>
+
+      <div style="margin-top:12px;color:var(--muted);font-size:13px">
+        <strong>Примечание.</strong> Это прототип с упрощёнными формулами. Значения Kc, глубины корней и пороги — ориентировочные. Перед применением в промышленных масштабах — калибруйте под местные условия.
+      </div>
+    </div>
+
+    <!-- right: presets + help + stats -->
+    <aside class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="muted">Предустановки культур</div>
+        <div class="tiny muted">Показатели</div>
+      </div>
+      <div style="margin-top:12px;display:grid;gap:8px">
+        <div style="display:flex;justify-content:space-between"><div>Пшеница</div><div class="tiny muted">Kc 0.80 · корни 400 мм</div></div>
+        <div style="display:flex;justify-content:space-between"><div>Кукуруза</div><div class="tiny muted">Kc 1.10 · корни 500 мм</div></div>
+        <div style="display:flex;justify-content:space-between"><div>Картофель</div><div class="tiny muted">Kc 0.95 · корни 300 мм</div></div>
+        <div style="display:flex;justify-content:space-between"><div>Овощные</div><div class="tiny muted">Kc 0.90 · корни 300 мм</div></div>
+        <div style="display:flex;justify-content:space-between"><div>Хлопок</div><div class="tiny muted">Kc 1.00 · корни 600 мм</div></div>
+      </div>
+
+      <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)" />
+
+      <div class="muted">Как считаем (коротко)</div>
+      <ol style="color:var(--muted);font-size:13px;margin-top:8px;padding-left:18px">
+        <li>Оцениваем ET₀ ≈ 0.3 × T (мм/день) — упрощённая оценка испарения воздуха.</li>
+        <li>ETc = Kc × ET₀ — потребность культуры в воде (мм/день).</li>
+        <li>Считаем, сколько воды нужно, чтобы поднять влажность до оптимума (мм → литры).</li>
+        <li>Учитываем эффективность орошения: фактическая подача = требуемое / eff.</li>
+      </ol>
+
+      <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)" />
+
+      <div id="statsBox" style="display:none">
+        <strong>📊 Статистика</strong>
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="tiny muted">Всего поливов</div>
+            <div class="stat-value" id="statCount">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="tiny muted">Воды потрачено</div>
+            <div class="stat-value" id="statTotal">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="tiny muted">Среднее</div>
+            <div class="stat-value" id="statAvg">0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="about" id="aboutBox" style="display:none;margin-top:8px">
+        <strong>О проекте WaterGuard</strong>
+        <p>WaterGuard — лёгкий веб-инструмент для быстрых решений по поливу. Он рассчитан на малых и средних фермеров, которые не имеют датчиков, но хотят разумно расходовать воду.</p>
+        <p>Как использовать: вводите площадь, текущую влажность и температуру — система предложит объём воды и интервал полива. История сохраняется локально в браузере.</p>
+        <p>Это прототип. Для промышленного применения требуется калибровка и тесты в полевых условиях.</p>
+      </div>
+
+    </aside>
+
+    <footer>Смелее жми «Посчитать». Избранные поля сохраняются локально в браузере.</footer>
+  </div>
+
+  <script>
+    const presets = {
+      wheat:{kc:0.8, root:400, smOpt:65, smWilt:25, ad:0.5, desc:'Пшеница — умеренная потребность воды.'},
+      corn:{kc:1.1, root:500, smOpt:70, smWilt:30, ad:0.5, desc:'Кукуруза — высокая потребность в фазу вегетации.'},
+      potato:{kc:0.95, root:300, smOpt:70, smWilt:25, ad:0.5, desc:'Картофель — чувствителен к нерегулярному поливу.'},
+      vegetables:{kc:0.9, root:300, smOpt:75, smWilt:30, ad:0.45, desc:'Овощные — частые, но небольшие поливы предпочтительнее.'},
+      cotton:{kc:1.0, root:600, smOpt:65, smWilt:25, ad:0.5, desc:'Хлопок — глубокая корневая система, длительные поливы.'}
+    }
+
+    const cropNames = {
+      wheat: 'Пшеница',
+      corn: 'Кукуруза',
+      potato: 'Картофель',
+      vegetables: 'Овощные',
+      cotton: 'Хлопок',
+      custom: 'Другое'
+    }
+
+    const $ = id=>document.getElementById(id)
+    const cropEl = $('crop')
+    const customBox = $('custom-settings')
+    let trendChart = null
+
+    cropEl.addEventListener('change',e=>{
+      if(e.target.value==='custom') customBox.style.display='block'
+      else customBox.style.display='none'
+      applyPreset()
+    })
+
+    function applyPreset(){
+      const val = cropEl.value
+      if(presets[val]){
+        const p = presets[val]
+        $('kc').value = p.kc
+        $('rootDepth').value = p.root
+        $('smOpt').value = p.smOpt
+        $('smWilt').value = p.smWilt
+        $('cropCard').innerText = p.desc + ' (Kc=' + p.kc + ', корни ' + p.root + ' мм)'
+      } else $('cropCard').innerText = 'Настрой вручную параметры культуры.'
+    }
+    applyPreset()
+
+    function mmToLitersPerUnit(mm, area, unit){
+      let areaM2 = unit==='ha'? area*10000 : area
+      return mm * areaM2
+    }
+
+    function fmt(n){
+      if(isNaN(n)) return '-'
+      if(Math.abs(n)>=1000000) return (n/1000000).toFixed(2)+' M'
+      if(Math.abs(n)>=1000) return (n/1000).toFixed(2)+' k'
+      return n.toFixed(0)
+    }
+
+    function updateVisuals(soil, temp, applied_mm){
+      const m = $('humidityMeter')
+      m.innerHTML = ''
+      const size = 100
+      const svgns = 'http://www.w3.org/2000/svg'
+      const svg = document.createElementNS(svgns,'svg')
+      svg.setAttribute('width',size)
+      svg.setAttribute('height',size)
+      const circleBg = document.createElementNS(svgns,'circle')
+      circleBg.setAttribute('cx',size/2); circleBg.setAttribute('cy',size/2); circleBg.setAttribute('r',40)
+      circleBg.setAttribute('fill','none'); circleBg.setAttribute('stroke','rgba(255,255,255,0.06)'); circleBg.setAttribute('stroke-width','10')
+      svg.appendChild(circleBg)
+      const circle = document.createElementNS(svgns,'circle')
+      circle.setAttribute('cx',size/2); circle.setAttribute('cy',size/2); circle.setAttribute('r',40)
+      circle.setAttribute('fill','none'); circle.setAttribute('stroke','#58c0a7'); circle.setAttribute('stroke-width','10')
+      circle.setAttribute('stroke-dasharray', Math.PI*2*40)
+      const pct = Math.max(0,Math.min(100,soil))/100
+      const dash = (Math.PI*2*40) * pct
+      circle.setAttribute('stroke-dashoffset', Math.PI*2*40 - dash)
+      circle.setAttribute('transform','rotate(-90 '+(size/2)+' '+(size/2)+')')
+      svg.appendChild(circle)
+      const txt = document.createElementNS(svgns,'text')
+      txt.setAttribute('x',size/2); txt.setAttribute('y',size/2+6); txt.setAttribute('text-anchor','middle')
+      txt.setAttribute('font-size','16'); txt.setAttribute('fill','#e6eef6')
+      txt.textContent = soil.toFixed(0) + '%'
+      svg.appendChild(txt)
+      m.appendChild(svg)
+
+      const wf = $('waterFill')
+      const level = Math.min(100, Math.max(0, soil))
+      wf.style.height = level + '%'
+
+      const tf = $('thermoFill')
+      const tmin = -10, tmax = 45
+      const th = Math.max(0, Math.min(100, (temp - tmin)/(tmax-tmin)*100))
+      tf.style.height = th + '%'
+    }
+
+    function drawTrendChart(){
+      const key = 'wg_history_v1'
+      const raw = localStorage.getItem(key)
+      const arr = raw? JSON.parse(raw):[]
+      const last10 = arr.slice(0, 10).reverse()
+      
+      if(last10.length===0) return
+
+      const ctx = $('trendChart').getContext('2d')
+      
+      if(trendChart) trendChart.destroy()
+      
+      trendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: last10.map(it => {
+            try { return new Date(it.date).toLocaleString(); }
+            catch(e){ return it.date || '' }
+          }),
+          datasets: [{
+            label: 'Влажность (%)',
+            data: last10.map(it=>it.soil),
+            borderColor: '#58c0a7',
+            backgroundColor: 'rgba(88,192,167,0.1)',
+            tension: 0.3,
+            fill: true,
+            pointRadius: 4,
+            pointBackgroundColor: '#58c0a7'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {legend: {display: false}},
+          scales: {
+            y: {
+              min: 0, max: 100,
+              ticks: {color: '#9aa6b2'},
+              grid: {color: 'rgba(255,255,255,0.03)'}
+            },
+            x: {
+              ticks: {color: '#9aa6b2'},
+              grid: {display: false}
+            }
+          }
+        }
+      })
+    }
+
+    function saveMeasurement(obj){
+      const key = 'wg_history_v1'
+      const raw = localStorage.getItem(key)
+      const arr = raw? JSON.parse(raw):[]
+      arr.unshift(obj)
+      if(arr.length>50) arr.pop()
+      localStorage.setItem(key, JSON.stringify(arr))
+      renderHistory()
+      drawTrendChart()
+    }
+
+    function renderHistory(){
+      const key = 'wg_history_v1'
+      const raw = localStorage.getItem(key)
+      const arr = raw? JSON.parse(raw):[]
+      const tbody = $('historyTable').querySelector('tbody')
+      tbody.innerHTML = ''
+      arr.forEach(it=>{
+        const tr = document.createElement('tr')
+        tr.innerHTML = '<td>'+it.date+'</td><td>'+it.crop+'</td><td>'+it.soil+'%</td><td>'+it.temp+'°C</td><td>'+it.liters+'</td>'
+        tbody.appendChild(tr)
+      })
+    }
+
+    function updateStats(){
+      const key = 'wg_history_v1'
+      const raw = localStorage.getItem(key)
+      const arr = raw? JSON.parse(raw):[]
+      
+      let total = 0
+      arr.forEach(it=>{
+        const liters = parseInt(it.liters.replace(/[^0-9]/g,'')) || 0
+        total += liters
+      })
+      
+      $('statCount').innerText = arr.length
+      $('statTotal').innerText = fmt(total) + ' л'
+      $('statAvg').innerText = arr.length>0? fmt(total/arr.length) + ' л' : '0 л'
+    }
+
+    function exportCSV(){
+      const key = 'wg_history_v1'
+      const raw = localStorage.getItem(key)
+      const arr = raw? JSON.parse(raw):[]
+      if(arr.length===0){ alert('Нет записей для экспорта'); return }
+      const headers = ['date','crop','soil','temp','liters']
+      const lines = [headers.join(',')]
+      arr.forEach(r=>{ lines.push([r.date,r.crop,r.soil,r.temp,r.liters].join(',')) })
+      const blob = new Blob([lines.join('\n')],{type:'text/csv'})
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href=url; a.download='waterguard_history.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+    }
+
+    function saveFavorite(){
+      const name = $('fieldName').value.trim()
+      const area = $('area').value
+      const unit = $('area-unit').value
+      const crop = $('crop').value
+      
+      if(!name){alert('Укажи название поля');return}
+      if(!area){alert('Укажи площадь');return}
+      
+      const key = 'wg_favorites'
+      const raw = localStorage.getItem(key)
+      const arr = raw? JSON.parse(raw):[]
+      arr.push({name, area, unit, crop, id: Date.now()})
+      localStorage.setItem(key, JSON.stringify(arr))
+      renderFavorites()
+      alert('Поле сохранено!')
+    }
+
+    function renderFavorites(){
+      const key = 'wg_favorites'
+      const raw = localStorage.getItem(key)
+      const arr = raw? JSON.parse(raw):[]
+      
+      const list = $('favoritesList')
+      list.innerHTML = ''
+      
+      if(arr.length===0){
+        $('favoritesBox').style.display = 'none'
+        return
+      }
+      
+      $('favoritesBox').style.display = 'block'
+      arr.forEach(fav=>{
+        const btn = document.createElement('button')
+        btn.className = 'fav-btn'
+        btn.type = 'button'
+        btn.innerHTML = fav.name + ' (' + fav.area + fav.unit + ')'
+        btn.onclick = ()=>loadFavorite(fav)
+        list.appendChild(btn)
+      })
+    }
+
+    function loadFavorite(fav){
+      $('fieldName').value = fav.name
+      $('area').value = fav.area
+      $('area-unit').value = fav.unit
+      $('crop').value = fav.crop
+      if($('crop').value==='custom') $('custom-settings').style.display='block'
+      else $('custom-settings').style.display='none'
+      applyPreset()
+    }
+
+    $('calc').addEventListener('click',()=>{
+      const area = parseFloat($('area').value)
+      const unit = $('area-unit').value
+      if(isNaN(area) || area<=0){alert('Укажи корректную площадь');return}
+      const crop = $('crop').value
+      const soil = parseFloat($('soil').value)
+      const temp = parseFloat($('temp').value)
+      const eff = parseFloat($('eff').value)
+      if(isNaN(soil) || soil<0 || soil>100){alert('Влажность 0–100%');return}
+      if(isNaN(temp)){alert('Укажи температуру');return}
+      if(isNaN(eff) || eff<=0 || eff>1.5){alert('Эффективность 0.5–1');return}
+
+      let kc = parseFloat($('kc').value)
+      let rootDepth = parseFloat($('rootDepth').value)
+      let smOpt = parseFloat($('smOpt').value)
+      let smWilt = parseFloat($('smWilt').value)
+      let ad = 0.5
+      if(presets[crop]){ const p = presets[crop]; kc = p.kc; rootDepth = p.root; smOpt=p.smOpt; smWilt=p.smWilt; ad=p.ad }
+
+      const ET0 = 0.3 * temp
+      const ETc = kc * ET0
+      const smCritical = smOpt - ad * (smOpt - smWilt)
+      const dailyLossPercent = (ETc / rootDepth) * 100
+
+      let daysToCritical = Infinity
+      if(dailyLossPercent>0){ daysToCritical = (soil - smCritical)/dailyLossPercent }
+
+      const waterToOpt_mm = Math.max(0, (smOpt - soil)/100 * rootDepth)
+      const applied_mm = eff>0? waterToOpt_mm / eff : waterToOpt_mm
+      const liters = mmToLitersPerUnit(applied_mm, area, unit)
+
+      let statusText = ''
+      if(soil <= smCritical){ statusText = '<span class="danger">Влага упала ниже критической — полив сейчас.</span>' }
+      else if(daysToCritical!==Infinity && daysToCritical<=1){ statusText = '<span class="warn">Полив в ближайшие 24 часа.</span>' }
+      else if(daysToCritical!==Infinity && daysToCritical<=4){ statusText = '<span class="pill">Через ' + Math.max(0,Math.floor(daysToCritical)) + ' дн.</span>' }
+      else { statusText = '<span class="tiny muted">Влажность в норме — можно отложить полив.</span>' }
+
+      let overWarn = ''
+      if(applied_mm>100) overWarn = '<div class="danger">Сильный объём воды (>100 мм). Проверь расчёт и эффективность орошения.</div>'
+      else if(applied_mm>50) overWarn = '<div class="warn">Большой объём (>50 мм) — возможно, часть можно разделить на несколько поливов.</div>'
+
+      const details = []
+      details.push('ET₀ (оценка): ' + ET0.toFixed(2) + ' мм/день')
+      details.push('ETc (потребность культуры): ' + ETc.toFixed(2) + ' мм/день (Kc=' + kc + ')')
+      details.push('Глубина корней: ' + rootDepth + ' мм')
+      details.push('Оптимальная влажность: ' + smOpt + '%; Точка увядания: ' + smWilt + '%')
+      details.push('Критическая влажность (при AD=' + (ad*100).toFixed(0) + '%): ' + smCritical.toFixed(1) + '%')
+      details.push('Ежедневная потеря влажности (оценка): ' + dailyLossPercent.toFixed(2) + ' %/день')
+
+      $('result').style.display='block'
+      $('summary').innerHTML = applied_mm>0? applied_mm.toFixed(1) + ' мм полива' : 'Полив не требуется'
+      $('subsummary').innerText = 'Нужный объём — это подъём влажности до оптимума (без учёта осадков).'
+      $('appliedLiters').innerHTML = applied_mm>0? fmt(liters) + ' л' : '0 л'
+
+      const detailsEl = $('details'); detailsEl.innerHTML = ''
+      details.forEach(d=>{ const li=document.createElement('li'); li.innerHTML = d; detailsEl.appendChild(li) })
+
+      $('status').innerHTML = statusText + '<div style="margin-top:8px">' + (daysToCritical===Infinity? 'Расчёт дней невозможен' : (daysToCritical<0? 'Критическое состояние — полить сейчас' : 'Ожидается ≈ ' + (isFinite(daysToCritical)? (daysToCritical>365? 'много дней' : daysToCritical.toFixed(1)+' дн.') : '-') )) + '</div>' + overWarn
+
+      const tod = getTimeOfDayRec(temp)
+      $('todRec').innerHTML = '<strong>Рекомендации по времени суток:</strong> ' + tod
+
+      updateVisuals(soil, temp, applied_mm)
+      drawTrendChart()
+
+      window.lastResult = {date:new Date().toLocaleString(), crop: cropNames[crop] || 'Другое', soil: soil, temp: temp, liters: fmt(liters)}
+    })
+
+    $('save').addEventListener('click',()=>{
+      if(!window.lastResult){ alert('Сначала посчитай.'); return }
+      saveMeasurement(window.lastResult)
+      alert('Измерение сохранено')
+    })
+
+    $('addFav').addEventListener('click',saveFavorite)
+
+    $('clearHistory').addEventListener('click',()=>{
+      if(confirm('Очистить историю?')){ localStorage.removeItem('wg_history_v1'); renderHistory(); updateStats() }
+    })
+
+    $('exportCSV').addEventListener('click', exportCSV)
+
+    $('showStats').addEventListener('click',()=>{
+      const b = $('statsBox')
+      b.style.display = b.style.display==='none'? 'block':'none'
+      if(b.style.display==='block') updateStats()
+    })
+
+    $('showAbout').addEventListener('click',()=>{
+      const b = $('aboutBox')
+      b.style.display = b.style.display==='none'? 'block':'none'
+    })
+
+    function getTimeOfDayRec(temp){
+      const hour = new Date().getHours()
+      let part = 'утро'
+      if(hour>=18 || hour<6) part = 'вечером/ночью'
+      else if(hour>=6 && hour<10) part = 'ранним утром'
+      else if(hour>=10 && hour<16) part = 'днём'
+      else part = 'вечером'
+
+      let tip = ''
+      if(temp>30) tip = 'Температура высокая → лучше поливать утром или вечером, чтобы снизить испарение.'
+      else if(temp<5) tip = 'Низкая температура → избегайте ночных поливов, риск переувлажнения.'
+      else tip = 'Оптимально — полив утром или вечером.'
+
+      return 'Сейчас примерно '+part + '. ' + tip
+    }
+
+    renderHistory()
+    renderFavorites()
+
+  </script>
+</body>
+</html>
